@@ -62,6 +62,7 @@ data ConstraintEnv =
       constraints :: Constraints
     , var :: Int
     , tenv :: TEnv }
+  deriving Show
 type Subst = [(TVar, Type)]
 idSubst = []
 
