@@ -30,29 +30,42 @@ getType env name = let val = (head env) in
 inferTypes :: ConstraintEnv -> Exp -> (ConstraintEnv, Type)
 inferTypes cenv (EVar var) = let this_type = (getType (tenv cenv) var) in
   (cenv, this_type)
-inferTypes cenv (ELambda v body) = let newEnv = (newTVar cenv)
-                                       nextVal = (inferTypes ((snd newEnv) {tenv = (tenv (snd newEnv)) ++ [(v, TVar v)] }) body) in
+inferTypes cenv (ELambda v body) = 
+  let newEnv = (newTVar cenv)
+      nextVal = (inferTypes ((snd newEnv) {tenv = (tenv (snd newEnv)) ++ [(v, TVar v)] }) body)
+  in
     (CEnv {
       constraints = (constraints (fst nextVal)) ++ [((fst newEnv), (TArrow (TVar v) (snd nextVal)))]
       , var = var cenv
       , tenv = tenv cenv
     }, fst newEnv)
-inferTypes cenv (EApp fn arg) = let e = (newTVar cenv)
-                                    e1 = (inferTypes ((snd e)) fn)
-                                    e2 = (inferTypes ((snd e)) arg) in
+inferTypes cenv (EApp fn arg) = 
+  let e = (newTVar cenv)
+      e1 = (inferTypes ((snd e)) fn)
+      e2 = (inferTypes ((snd e)) arg)
+  in
     (CEnv {
       constraints = (constraints (fst e1)) ++ (constraints (fst e2) ++ [((snd e1), (TArrow (snd e2) (fst e)))])
       , var = var cenv
       , tenv = tenv cenv
     }, (fst e))
-inferTypes cenv (ECond pred tbody fbody) = let e = (newTVr cenv)
-                                               epred = (inferTypes (snd e) pred)
-                                               etbody = (inferTypes (snd e) tbody)
-                                               efbody = (inferTypes (snd e) fbody) in
-  if (snd epred) == boolType then (cenv, (snd etbody)) else throw (TypeMismatch (snd epred) boolType)
-inferTypes cenv (EPlus op1 op2) = let e = (newTVar cenv)
-                                      e1 = (inferTypes (snd e) op1)
-                                      e2 = (inferTypes (snd e) op2) in
+inferTypes cenv (ECond pred tbody fbody) =
+  let e = (newTVar cenv)
+      epred = (inferTypes (snd e) pred)
+      etbody = (inferTypes (snd e) tbody)
+      efbody = (inferTypes (snd e) fbody)
+  in
+    if (snd epred) == boolType then
+      (CEnv {
+        constraints = (constraints (fst epred)) ++ (constraints (fst etbody)) ++ (constraints (fst efbody)) ++ [((snd etbody), (snd efbody))]
+        , var = var cenv
+        , tenv = tenv cenv
+      }, (snd etbody))
+    else throw (TypeMismatch (snd epred) boolType)
+inferTypes cenv (EPlus op1 op2) =
+  let e = (newTVar cenv)
+      e1 = (inferTypes (snd e) op1)
+      e2 = (inferTypes (snd e) op2) in
   (CEnv {
     constraints = (constraints (fst e1)) ++ (constraints (fst e2)) ++ [((snd e1), (intType))] ++ [((snd e2), (intType))] ++ [((fst e), (intType))]
     , var = var cenv
@@ -60,7 +73,7 @@ inferTypes cenv (EPlus op1 op2) = let e = (newTVar cenv)
   }, intType)
 inferTypes cenv (EPrim (PNum _)) = (cenv, intType)
 inferTypes cenv (EPrim (PBool _)) = (cenv, boolType)
-inferTypes cenv (ELet s body) = 
+inferTypes cenv (ELet s body) = throw ToImplement
 
 {- Top-level type inference function. I will be calling it on Submitty. -}
 inferType :: Exp -> Type
