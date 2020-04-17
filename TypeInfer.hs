@@ -19,7 +19,19 @@ unify [(t1, t2)] = case (t1, t2) of
   (TArrow t11 t12, TArrow t21 t22) -> let s1 = (unify [(t11, t21)])
                                           s2 = (unify [((applySubst t12 s1), (applySubst t22 s1))])
     in s2 ++ s1
-  (t1, t2) -> throw (TypeMismatch t1 t2)
+  (t1, t2) -> if (t1 == t2) then [] else throw (TypeMismatch t1 t2)
+
+unifySet :: Constraints -> Subst
+unifySet [] = []
+unifySet const = let first_val = (head const)
+                     second_val = (tail const)
+                     subst = (unify [first_val]) in
+  (unifySet (foldl foldHelp second_val subst)) ++ subst 
+
+foldHelp :: Constraints -> (String, Type) -> Constraints
+foldHelp const (t1, t2) = substAll (TVar t1) t2 const  
+
+
 
 getType :: TEnv -> String -> Type
 getType [] name = throw (UnboundVar name)
@@ -52,7 +64,7 @@ inferTypes cenv (EApp fn arg) = let e = (newTVar cenv)
       constraints = (constraints (fst e1)) ++ (constraints (fst e2)) ++ [((snd e1), (TArrow (snd e2) (fst e)))] {-(constraints (fst e1)) ++ (constraints (fst e2) ++ [((snd e1), (TArrow (snd e2) (fst e)))])-}
       , var = var cenv
       , tenv = tenv cenv
-    }, (snd e1))
+    }, (fst e))
 inferTypes cenv (ECond pred tbody fbody) =
   let e = (newTVar cenv)
       epred = (inferTypes (snd e) pred)
@@ -87,15 +99,10 @@ inferTypes cenv (ELet s body) = let e = (newTVar cenv) in case s of
       , var = var cenv
       , tenv = (tenv (fst e1)) ++ (tenv (fst e2))
     }, snd (inferTypes cenv body))
-  
-unifySet :: Constraints -> Subst
-unifySet [] = []
-unifySet const = let first_val = (head const)
-                     second_val = (tail const) in
-  (unify [first_val]) ++ (unifySet second_val)
+
 
 {- Top-level type inference function. I will be calling it on Submitty. -}
 inferType :: Exp -> Type
 inferType exp = let full = (inferTypes (CEnv {constraints = [], var = 0, tenv = []}) exp)
                     subst = (unifySet (constraints (fst full))) in
-  (trace (show ((unifySet (constraints (fst full)))))) (applySubst (snd full) (reverse (unifySet (constraints (fst full)))))
+   (applySubst (snd full) (subst))
