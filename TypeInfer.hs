@@ -54,46 +54,52 @@ inferTypes cenv (ELambda v body) = let newEnv = (newTVar cenv)
                                        nextVal = (inferTypes ((snd newEnv) {tenv = combine_tenv (tenv (snd newEnv)) [(v, TVar v)]}) body) in
     (CEnv {
       constraints = (constraints (fst nextVal)) ++ [((fst newEnv), (TArrow (TVar v) (snd nextVal)))] {-(union (constraints (fst nextVal)) [((fst newEnv), (TArrow (TVar v) (snd nextVal)))])-}
-      , var = var cenv
-      , tenv = tenv cenv
+      , var = var (fst nextVal)
+      , tenv = tenv (fst nextVal)
     }, fst newEnv)
 inferTypes cenv (EApp fn arg) = let e = (newTVar cenv)
                                     e1 = (inferTypes ((snd e)) fn)
-                                    e2 = (inferTypes ((snd e)) arg) in
+                                    e2 = (inferTypes ((fst e1)) arg) in
     (CEnv {
-      constraints = (constraints (fst e1)) ++ (constraints (fst e2)) ++ [((snd e1), (TArrow (snd e2) (fst e)))] {-(constraints (fst e1)) ++ (constraints (fst e2) ++ [((snd e1), (TArrow (snd e2) (fst e)))])-}
-      , var = var cenv
-      , tenv = tenv cenv
+      constraints = (constraints (fst e2)) ++ [((snd e1), (TArrow (snd e2) (fst e)))] {-(constraints (fst e1)) ++ (constraints (fst e2) ++ [((snd e1), (TArrow (snd e2) (fst e)))])-}
+      , var = var (fst e2)
+      , tenv = tenv (fst e2)
     }, (fst e))
 inferTypes cenv (ECond pred tbody fbody) =
   let e = (newTVar cenv)
       epred = (inferTypes (snd e) pred)
-      etbody = (inferTypes (snd e) tbody)
-      efbody = (inferTypes (snd e) fbody)
+      etbody = (inferTypes (fst epred) tbody)
+      efbody = (inferTypes (fst etbody) fbody)
   in
-    if (snd epred) == boolType then
       (CEnv {
-        constraints = (constraints (fst epred)) ++ (constraints (fst etbody)) ++ (constraints (fst efbody)) ++ [((snd etbody), (snd efbody))]{-(constraints (fst epred)) ++ (constraints (fst etbody)) ++ (constraints (fst efbody)) ++ [((snd etbody), (snd efbody))]-}
-        , var = var cenv
-        , tenv = tenv cenv
+        constraints = (constraints (fst efbody)) ++ [((snd etbody), (snd efbody))] ++ [((snd epred), (boolType))]{-(constraints (fst epred)) ++ (constraints (fst etbody)) ++ (constraints (fst efbody)) ++ [((snd etbody), (snd efbody))]-}
+        , var = var (fst efbody)
+        , tenv = tenv (fst efbody)
       }, (snd etbody))
-    else throw (TypeMismatch (snd epred) boolType)
 inferTypes cenv (EPlus op1 op2) = let e = (newTVar cenv)
                                       e1 = (inferTypes (snd e) op1)
-                                      e2 = (inferTypes (snd e) op2) in
+                                      e2 = (inferTypes (fst e1) op2) in
   (CEnv {
-    constraints = (constraints (fst e1)) ++ (constraints (fst e2)) ++ [((snd e1), (intType))] ++ [((snd e2), (intType))] ++ [((fst e), (intType))]{-(constraints (fst e1)) ++ (constraints (fst e2)) ++ [((snd e1), (intType))] ++ [((snd e2), (intType))] ++ [((fst e), (intType))]-}
-    , var = var cenv
-    , tenv = tenv cenv
+    constraints = (constraints (fst e2)) ++ [((snd e1), (intType))] ++ [((snd e2), (intType))] ++ [((fst e), (intType))]{-(constraints (fst e1)) ++ (constraints (fst e2)) ++ [((snd e1), (intType))] ++ [((snd e2), (intType))] ++ [((fst e), (intType))]-}
+    , var = var (fst e2)
+    , tenv = tenv (fst e2)
   }, (fst e))
 inferTypes cenv (EPrim (PNum _)) = (cenv, intType)
 inferTypes cenv (EPrim (PBool _)) = (cenv, boolType)
 inferTypes cenv (ELet s body) = let e = (newTVar cenv) in case s of 
   SEmpty -> (inferTypes cenv body)
-  SAssign id exp -> let e1 = (inferTypes ((snd e) {tenv = combine_tenv (tenv (snd e)) [(id, TVar id)]}) exp) in
-    if (getType (tenv cenv) id) == (snd e1) then (inferTypes cenv body) else throw (TypeMismatch (snd e1) (getType (tenv cenv) id))
+  SAssign id exp -> let e1 = (inferTypes ((snd e) {tenv = combine_tenv (tenv (snd e)) [(id, (fst e))]}) exp)
+                        e2 = (inferTypes (fst e1) body) in
+    (CEnv {
+      constraints = (constraints (fst e2)) ++ [((fst e), (snd e1))]
+      , var = var (fst e2)
+      , tenv = tenv (fst e2)
+    }, (snd e1))
+    -- create a constraint for the type variable that was created for id to the type of e1
+    -- if (getType (tenv cenv) id) == (snd e1) then (inferTypes cenv body) else throw (TypeMismatch (snd e1) (getType (tenv cenv) id))
   SSeq s1 s2 -> let e1 = (inferTypes (snd e) (ELet s1 body))
                     e2 = (inferTypes (snd e) (ELet s2 body)) in
+                    -- write a helper function that traverses s, and finds all variables in the definition block of the let statement
     (CEnv {
       constraints = (constraints (fst e1)) ++ (constraints (fst e2)){-(constraints (fst e1)) ++ (constraints (fst e2))-}
       , var = var cenv
@@ -104,5 +110,5 @@ inferTypes cenv (ELet s body) = let e = (newTVar cenv) in case s of
 {- Top-level type inference function. I will be calling it on Submitty. -}
 inferType :: Exp -> Type
 inferType exp = let full = (inferTypes (CEnv {constraints = [], var = 0, tenv = []}) exp)
-                    subst = (unifySet (constraints (fst full))) in
+                    subst = (trace (show full) (unifySet (constraints (fst full)))) in
    (applySubst (snd full) (subst))
